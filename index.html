@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sistema de Fiscalização de Rodovias — Firebase (Completo)</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    :root{--primary:#0d6efd;--secondary:#6c757d}
+    body{padding:18px;background:#f8f9fa;font-family:Inter,Segoe UI,Roboto,"Helvetica Neue",Arial}
+    .app-container{max-width:1400px;margin:0 auto}
+    .card-header{background:var(--primary);color:#fff;font-weight:600;border-radius:8px 8px 0 0;padding:12px 18px}
+    .inspector-photo{width:52px;height:52px;border-radius:50%;object-fit:cover}
+    .badge-contractor{background:var(--secondary);color:#fff;padding:.25rem .5rem;border-radius:.3rem}
+    .excel-upload-area{border:2px dashed var(--primary);padding:22px;border-radius:8px;background:#fff;cursor:pointer}
+    .multiple-inspections-container{max-height:300px;overflow:auto;border:1px solid #e9ecef;padding:12px;border-radius:6px;background:#fff}
+    .control-item{padding:12px;background:#fff;border-radius:6px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  </style>
+</head>
+<body>
+  <div class="container app-container">
+    <header class="mb-4 text-center">
+      <h1 style="color:var(--primary);font-weight:700">Sistema de Fiscalização de Rodovias</h1>
+      <p class="text-muted">Versão completa — Firestore (realtime) + Storage (fotos) — pronto para uso</p>
+    </header>
+
+    <ul class="nav nav-tabs mb-3" role="tablist">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#register">Registrar Vistoria</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#roads">Rodovias</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#contractors">Empreiteiras</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#inspectors">Fiscais</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#history">Histórico</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#control">Controle</button></li>
+    </ul>
+
+    <div class="tab-content">
+      <!-- Register -->
+      <div class="tab-pane fade show active" id="register">
+        <div class="card mb-3">
+          <div class="card-header"><i class="fas fa-clipboard-check me-2"></i>Registrar Nova Vistoria</div>
+          <div class="card-body">
+            <form id="inspectionForm">
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <label class="form-label">Fiscal</label>
+                  <select id="inspectorName" class="form-select" required><option>Carregando...</option></select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Data</label>
+                  <input id="inspectionDate" type="date" class="form-control" required />
+                </div>
+              </div>
+
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <label class="form-label">Rodovia</label>
+                  <select id="roadSelect" class="form-select" required><option>Carregando...</option></select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Empreiteira Responsável</label>
+                  <div id="contractorInfo" class="form-control bg-light py-2">Selecione rodovia + KM</div>
+                </div>
+              </div>
+
+              <div class="row g-3 mb-3">
+                <div class="col-md-6"><label class="form-label">KM Inicial</label><input id="startKm" class="form-control" step="0.001" type="number" required/></div>
+                <div class="col-md-6"><label class="form-label">KM Final</label><input id="endKm" class="form-control" step="0.001" type="number" required/></div>
+              </div>
+
+              <div class="mb-3"><label class="form-label">Observações</label><textarea id="observations" class="form-control" rows="3"></textarea></div>
+
+              <div class="d-flex justify-content-between">
+                <button id="addAnotherInspection" type="button" class="btn btn-outline-primary"><i class="fas fa-plus me-2"></i>Adicionar Outra</button>
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save me-2"></i>Salvar Vistorias</button>
+              </div>
+
+              <div id="multipleInspectionsContainer" class="multiple-inspections-container d-none mt-3">
+                <h6>Vistorias Adicionais</h6>
+                <div id="multipleInspectionsList"></div>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><i class="fas fa-file-excel me-2"></i>Importar Vistorias via Excel</div>
+          <div class="card-body">
+            <div id="excelUploadArea" class="excel-upload-area">
+              <div style="font-size:1.6rem"><i class="fas fa-file-excel"></i></div>
+              <div>Arraste e solte, ou clique para selecionar uma planilha</div>
+              <input id="excelFileInput" type="file" accept=".xlsx,.xls" style="display:none" />
+            </div>
+            <div class="alert alert-info mt-3">Planilha: Data, Fiscal, Rodovia, KM Inicial, KM Final, Observações</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Roads -->
+      <div class="tab-pane fade" id="roads">
+        <div class="card mb-3">
+          <div class="card-header"><i class="fas fa-road me-2"></i>Cadastrar Rodovia</div>
+          <div class="card-body">
+            <form id="roadForm">
+              <div class="row g-3 mb-3">
+                <div class="col-md-4"><label class="form-label">Tipo</label><select id="roadType" class="form-select"><option>SP</option><option>SPA</option><option>SPD</option></select></div>
+                <div class="col-md-4"><label class="form-label">Número</label><input id="roadNumber" class="form-control" required/></div>
+                <div class="col-md-4"><label class="form-label">Empreiteira Padrão</label><select id="roadContractor" class="form-select"><option value="">Nenhuma</option></select></div>
+              </div>
+              <div class="row g-3 mb-3">
+                <div class="col-md-6"><label class="form-label">KM Inicial</label><input id="roadStartKm" type="number" step="0.001" class="form-control"/></div>
+                <div class="col-md-6"><label class="form-label">KM Final</label><input id="roadEndKm" type="number" step="0.001" class="form-control"/></div>
+              </div>
+              <div class="mb-3"><label class="form-label">Descrição</label><textarea id="roadDescription" class="form-control" rows="2"></textarea></div>
+              <button type="submit" class="btn btn-primary">Cadastrar Rodovia</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><i class="fas fa-list me-2"></i>Trechos Cadastrados</div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table" id="roadSectionsTable"><thead><tr><th>Rodovia</th><th>Trecho (KM)</th><th>Extensão</th><th>Empreiteira</th><th>Ações</th></tr></thead><tbody></tbody></table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contractors -->
+      <div class="tab-pane fade" id="contractors">
+        <div class="card mb-3">
+          <div class="card-header"><i class="fas fa-building me-2"></i>Cadastrar Empreiteira</div>
+          <div class="card-body">
+            <form id="contractorForm"><div class="row g-3"><div class="col-md-10"><input id="contractorName" class="form-control" placeholder="Nome da empreiteira" required/></div><div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Salvar</button></div></div></form>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><i class="fas fa-list me-2"></i>Empreiteiras</div>
+          <div class="card-body">
+            <table class="table" id="contractorsTable"><thead><tr><th>Nome</th><th>Trechos</th><th>Ações</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inspectors -->
+      <div class="tab-pane fade" id="inspectors">
+        <div class="card mb-3">
+          <div class="card-header"><i class="fas fa-user-tie me-2"></i>Cadastrar Fiscal</div>
+          <div class="card-body">
+            <form id="inspectorForm">
+              <div class="row g-3 mb-3">
+                <div class="col-md-6"><input id="inspectorFullName" class="form-control" placeholder="Nome completo" required/></div>
+                <div class="col-md-6"><input id="inspectorRegistration" class="form-control" placeholder="Matrícula" required/></div>
+              </div>
+              <div class="mb-3"><input id="inspectorPhoto" type="file" accept="image/*" class="form-control"/></div>
+              <button class="btn btn-primary" type="submit">Cadastrar Fiscal</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><i class="fas fa-list me-2"></i>Fiscais</div>
+          <div class="card-body">
+            <table class="table" id="inspectorsTable"><thead><tr><th>Foto</th><th>Nome</th><th>Matrícula</th><th>Vistorias</th><th>Ações</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div class="tab-pane fade" id="history">
+        <div class="card mb-3">
+          <div class="card-header"><i class="fas fa-history me-2"></i>Histórico</div>
+          <div class="card-body">
+            <div class="row g-3 mb-3">
+              <div class="col-md-4"><select id="filterInspector" class="form-select"><option value="">Todos</option></select></div>
+              <div class="col-md-4"><select id="filterRoad" class="form-select"><option value="">Todas</option></select></div>
+              <div class="col-md-4"><input id="filterDate" type="date" class="form-control"/></div>
+            </div>
+
+            <div class="mb-3"><button id="exportExcel" class="btn btn-success me-2">Exportar Excel</button><button id="exportPDF" class="btn btn-danger">Exportar PDF</button></div>
+
+            <div class="table-responsive"><table class="table" id="historyTable"><thead><tr><th>Data</th><th>Fiscal</th><th>Rodovia</th><th>Trecho</th><th>Empreiteira</th><th>Georreferenciamento</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><i class="fas fa-map-marked-alt me-2"></i>Importar Geo (Excel)</div>
+          <div class="card-body">
+            <div class="excel-upload-area" id="geoExcelUploadArea"><div style="font-size:1.6rem"><i class="fas fa-file-excel"></i></div><div>Planilha: Rodovia, KM, Latitude, Longitude</div><input id="geoExcelFileInput" type="file" accept=".xlsx,.xls" style="display:none"/></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Control -->
+      <div class="tab-pane fade" id="control">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-exclamation-circle me-2"></i>Vistorias Atrasadas</div>
+          <div class="card-body"><ul id="overdueInspections" class="list-unstyled mb-0"></ul></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modals: Sections (visual), Geo, Confirm -->
+  <div class="modal fade" id="sectionsModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Gerenciar Trechos</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <div id="sectionsRoadLabel" class="mb-2"></div>
+      <div class="table-responsive"><table class="table" id="roadSectionsModalTable"><thead><tr><th>KM Inicial</th><th>KM Final</th><th>Empreiteira</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
+      <hr/>
+      <form id="sectionForm" class="row g-3">
+        <input type="hidden" id="modalRoadId"/>
+        <div class="col-md-3"><input id="sectionStartKm" class="form-control" placeholder="KM inicial" required/></div>
+        <div class="col-md-3"><input id="sectionEndKm" class="form-control" placeholder="KM final" required/></div>
+        <div class="col-md-4"><select id="sectionContractor" class="form-select" required><option value="">Selecione</option></select></div>
+        <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Adicionar</button></div>
+      </form>
+    </div>
+    <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Fechar</button></div>
+  </div></div></div>
+
+  <div class="modal fade" id="geoModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Adicionar Georreferenciamento</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <input id="geoInspectionId" type="hidden"/>
+      <div class="mb-2"><label class="form-label">Latitude Inicial</label><input id="startLat" class="form-control"/></div>
+      <div class="mb-2"><label class="form-label">Longitude Inicial</label><input id="startLng" class="form-control"/></div>
+      <div class="mb-2"><label class="form-label">Latitude Final</label><input id="endLat" class="form-control"/></div>
+      <div class="mb-2"><label class="form-label">Longitude Final</label><input id="endLng" class="form-control"/></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button id="saveGeo" class="btn btn-primary">Salvar Coordenadas</button></div>
+  </div></div></div>
+
+  <div class="modal fade" id="confirmModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Confirmação</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body" id="confirmMessage"></div>
+    <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button id="confirmAction" class="btn btn-danger">Confirmar</button></div>
+  </div></div></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script type="module">
+  // Firebase modular CDN v11
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-analytics.js";
+  import {
+    getFirestore, collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, getDocs, getDoc, query, where, orderBy
+  } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-firestore.js";
+  import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/11.8.0/firebase-storage.js";
+
+  // ---------- Firebase config (you provided) ----------
+  const firebaseConfig = {
+    apiKey: "AIzaSyDIG6UMaXbYhH94sr2ZT2BX6rgSW37vMqI",
+    authDomain: "controle-de-vistorias-e9a59.firebaseapp.com",
+    projectId: "controle-de-vistorias-e9a59",
+    storageBucket: "controle-de-vistorias-e9a59.appspot.com",
+    messagingSenderId: "535551010447",
+    appId: "1:535551010447:web:02d88e46a50842f947f2fa",
+    measurementId: "G-R6RPM8DEPL"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  try { getAnalytics(app); } catch(e) {}
+  const db = getFirestore(app);
+  const storage = getStorage(app);
+
+  // Local caches
+  let inspectors = [];
+  let contractors = [];
+  let roads = [];
+  let inspections = [];
+
+  // ---------- Real-time listeners ----------
+  onSnapshot(collection(db, "inspectors"), snap => {
+    inspectors = []; snap.forEach(d => inspectors.push({ id: d.id, ...d.data() }));
+    populateInspectorsSelect(); populateFilterInspectors(); loadInspectorsTable();
+  });
+
+  onSnapshot(collection(db, "contractors"), snap => {
+    contractors = []; snap.forEach(d => contractors.push({ id: d.id, ...d.data() }));
+    populateContractorsSelect(); populateRoadContractorsSelect(); populateSectionsContractors(); loadContractorsTable(); loadRoadsTable();
+  });
+
+  onSnapshot(collection(db, "roads"), async snap => {
+    roads = [];
+    for (const d of snap.docs) {
+      const roadObj = { id: d.id, ...d.data(), sections: [] };
+      // load sections subcollection for each road
+      const sSnap = await getDocs(collection(db, `roads/${d.id}/sections`));
+      sSnap.forEach(s => roadObj.sections.push({ id: s.id, ...s.data() }));
+      roads.push(roadObj);
+    }
+    populateRoadsSelect(); populateFilterRoads(); loadRoadsTable();
+  });
+
+  onSnapshot(collection(db, "inspections"), snap => {
+    inspections = []; snap.forEach(d => inspections.push({ id: d.id, ...d.data() }));
+    loadHistoryTable(); loadOverdueInspections(); loadInspectorsTable(); // refresh related views
+  });
+
+  // ---------- Populate UI helpers ----------
+  function populateInspectorsSelect() {
+    const sel = document.getElementById('inspectorName'); if(!sel) return;
+    sel.innerHTML = '<option value="">Selecione o fiscal</option>';
+    inspectors.forEach(i=> { const opt = document.createElement('option'); opt.value = i.id; opt.textContent = `${i.name} (${i.registration||''})`; sel.appendChild(opt); });
+  }
+  function populateFilterInspectors() {
+    const sel = document.getElementById('filterInspector'); if(!sel) return;
+    sel.innerHTML = '<option value="">Todos</option>';
+    inspectors.forEach(i=> { const opt = document.createElement('option'); opt.value = i.id; opt.textContent = `${i.name} (${i.registration||''})`; sel.appendChild(opt); });
+  }
+  function populateRoadsSelect() {
+    const sel = document.getElementById('roadSelect'); if(!sel) return;
+    sel.innerHTML = '<option value="">Selecione a rodovia</option>';
+    roads.forEach(r=> { const opt = document.createElement('option'); opt.value = r.id; opt.textContent = `${r.type}-${r.number}`; sel.appendChild(opt); });
+  }
+  function populateFilterRoads() {
+    const sel = document.getElementById('filterRoad'); if(!sel) return;
+    sel.innerHTML = '<option value="">Todas</option>';
+    roads.forEach(r=> { const opt = document.createElement('option'); opt.value = r.id; opt.textContent = `${r.type}-${r.number}`; sel.appendChild(opt); });
+  }
+  function populateContractorsSelect() {
+    const sel = document.getElementById('sectionContractor'); if(!sel) return;
+    sel.innerHTML = '<option value="">Selecione</option>';
+    contractors.forEach(c=> { const opt = document.createElement('option'); opt.value = c.id; opt.textContent = c.name; sel.appendChild(opt); });
+  }
+  function populateRoadContractorsSelect() {
+    const sel = document.getElementById('roadContractor'); if(!sel) return;
+    sel.innerHTML = '<option value="">Nenhuma</option>';
+    contractors.forEach(c=> { const opt = document.createElement('option'); opt.value = c.id; opt.textContent = c.name; sel.appendChild(opt); });
+  }
+  function populateSectionsContractors() {
+    const sel = document.getElementById('sectionContractor'); if(!sel) return;
+    sel.innerHTML = '<option value="">Selecione</option>';
+    contractors.forEach(c=> { const opt = document.createElement('option'); opt.value = c.id; opt.textContent = c.name; sel.appendChild(opt); });
+  }
+
+  // ---------- Render tables ----------
+  function loadRoadsTable() {
+    const tbody = document.querySelector('#roadSectionsTable tbody'); if(!tbody) return;
+    tbody.innerHTML = '';
+    roads.forEach(road=>{
+      const secs = road.sections||[];
+      if (!secs.length) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${road.type}-${road.number}</td><td>${road.startKm} a ${road.endKm}</td><td>${(road.endKm-road.startKm).toFixed(3)} km</td><td><small class="text-muted">Nenhuma</small></td><td><button class="btn btn-sm btn-outline-primary manage-sections" data-id="${road.id}">Gerenciar</button></td>`;
+        tbody.appendChild(tr);
+      } else {
+        secs.forEach((s,idx)=>{
+          const contractor = contractors.find(c=>c.id===s.contractorId) || contractors.find(c=>c.id==s.contractorId);
+          const tr = document.createElement('tr');
+          if (idx===0) {
+            tr.innerHTML = `<td rowspan="${secs.length}">${road.type}-${road.number}</td><td>${s.startKm} a ${s.endKm}</td><td>${(s.endKm-s.startKm).toFixed(3)} km</td><td>${contractor?contractor.name:s.contractorId}</td><td rowspan="${secs.length}"><button class="btn btn-sm btn-outline-primary manage-sections" data-id="${road.id}">Gerenciar</button></td>`;
+          } else {
+            tr.innerHTML = `<td>${s.startKm} a ${s.endKm}</td><td>${(s.endKm-s.startKm).toFixed(3)} km</td><td>${contractor?contractor.name:s.contractorId}</td>`;
+          }
+          tbody.appendChild(tr);
+        });
+      }
+    });
+  }
+
+  function loadContractorsTable() {
+    const tbody = document.querySelector('#contractorsTable tbody'); if(!tbody) return;
+    tbody.innerHTML = '';
+    contractors.forEach(c=>{
+      let count=0; roads.forEach(r=> { if (r.sections) count+= r.sections.filter(s=> s.contractorId==c.id).length; });
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${c.name}</td><td>${count} trecho(s)</td><td><button class="btn btn-sm btn-outline-danger delete-contractor" data-id="${c.id}">Excluir</button></td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function loadInspectorsTable() {
+    const tbody = document.querySelector('#inspectorsTable tbody'); if(!tbody) return;
+    tbody.innerHTML = '';
+    inspectors.forEach(i=>{
+      const count = inspections.filter(ins=> ins.inspectorId==i.id).length;
+      const photoHtml = i.photoUrl ? `<img src="${i.photoUrl}" class="inspector-photo" alt="${i.name}">` : `<div class="inspector-photo bg-secondary d-flex align-items-center justify-content-center text-white"><i class="fas fa-user"></i></div>`;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${photoHtml}</td><td>${i.name}</td><td>${i.registration||''}</td><td>${count}</td><td><button class="btn btn-sm btn-outline-danger delete-inspector" data-id="${i.id}">Excluir</button></td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function loadHistoryTable() {
+    const tbody = document.querySelector('#historyTable tbody'); if(!tbody) return;
+    tbody.innerHTML = '';
+    const fIns = document.getElementById('filterInspector').value;
+    const fRoad = document.getElementById('filterRoad').value;
+    const fDate = document.getElementById('filterDate').value;
+    let list = inspections.slice();
+    if (fIns) list = list.filter(i=> i.inspectorId==fIns);
+    if (fRoad) list = list.filter(i=> i.roadId==fRoad);
+    if (fDate) list = list.filter(i=> i.date==fDate);
+    list.sort((a,b)=> new Date(b.date)-new Date(a.date));
+    list.forEach(ins=>{
+      const inspector = inspectors.find(x=> x.id==ins.inspectorId) || {};
+      const road = roads.find(r=> r.id==ins.roadId) || {};
+      const contractor = findContractorForRoadSection(ins.roadId, ins.startKm);
+      const hasGeo = ins.geoStartLat && ins.geoStartLng && ins.geoEndLat && ins.geoEndLng;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${formatDate(ins.date)}</td><td>${inspector.name||''}</td><td>${road.type?road.type+'-'+road.number:''}</td><td>${ins.startKm} a ${ins.endKm}</td><td>${contractor?contractor.name:'Não definida'}</td><td>${hasGeo?'<span class="badge bg-success">Com geo</span>':'<button class="btn btn-sm btn-outline-primary add-geo" data-id="'+ins.id+'">Adicionar</button>'}</td><td><button class="btn btn-sm btn-outline-info view-inspection" data-id="${ins.id}">Ver</button> <button class="btn btn-sm btn-outline-danger delete-inspection" data-id="${ins.id}">Excluir</button></td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function loadOverdueInspections() {
+    const ul = document.getElementById('overdueInspections'); if(!ul) return;
+    ul.innerHTML = '';
+    const today = new Date(); const thirtyAgo = new Date(); thirtyAgo.setDate(today.getDate()-30);
+    roads.forEach(road=>{
+      const roadIns = inspections.filter(i=> i.roadId==road.id);
+      if (roadIns.length) {
+        roadIns.sort((a,b)=> new Date(b.date)-new Date(a.date));
+        const last = new Date(roadIns[0].date);
+        if (last < thirtyAgo) {
+          const days = Math.floor((today-last)/(1000*60*60*24));
+          const li = document.createElement('li'); li.className='control-item';
+          li.innerHTML = `<div><strong>${road.type}-${road.number}</strong><div class="text-danger">${days} dias desde a última vistoria</div></div><button class="btn btn-sm btn-primary register-inspection" data-id="${road.id}">Registrar</button>`;
+          ul.appendChild(li);
+        }
+      } else {
+        const li = document.createElement('li'); li.className='control-item';
+        li.innerHTML = `<div><strong>${road.type}-${road.number}</strong><div class="text-danger">Nunca vistoriada</div></div><button class="btn btn-sm btn-primary register-inspection" data-id="${road.id}">Registrar</button>`;
+        ul.appendChild(li);
+      }
+    });
+    if (!ul.children.length) ul.innerHTML = '<li class="text-center p-3 text-muted">Nenhuma vistoria atrasada no momento</li>';
+  }
+
+  // ---------- Utility ----------
+  function formatDate(d){ try{ return new Date(d).toLocaleDateString('pt-BR'); }catch(e){return d;} }
+  function findContractorForRoadSection(roadId, km) {
+    const road = roads.find(r=> r.id==roadId);
+    if (!road || !road.sections) return null;
+    const sec = road.sections.find(s => km >= s.startKm && km <= s.endKm);
+    if (!sec) return null;
+    return contractors.find(c => c.id==sec.contractorId) || contractors.find(c=> c.id===sec.contractorId);
+  }
+
+  // ---------- Event wiring ----------
+  document.addEventListener('click', async (e) => {
+    const t = e.target;
+    if (t.closest('.manage-sections')) {
+      const roadId = t.closest('.manage-sections').dataset.id;
+      openSectionsVisualModal(roadId);
+    } else if (t.closest('.delete-inspector')) {
+      const id = t.closest('.delete-inspector').dataset.id;
+      showConfirm('Excluir fiscal?', async ()=> await deleteInspector(id));
+    } else if (t.closest('.delete-contractor')) {
+      const id = t.closest('.delete-contractor').dataset.id;
+      showConfirm('Excluir empreiteira?', async ()=> { await deleteContractor(id); });
+    } else if (t.closest('.delete-inspection')) {
+      const id = t.closest('.delete-inspection').dataset.id;
+      showConfirm('Excluir vistoria?', async ()=> { await deleteDoc(doc(db,"inspections",id)); });
+    } else if (t.closest('.add-geo')) {
+      const id = t.closest('.add-geo').dataset.id;
+      openGeoModal(id);
+    } else if (t.closest('.view-inspection')) {
+      const id = t.closest('.view-inspection').dataset.id;
+      showInspectionDetails(id);
+    } else if (t.closest('.register-inspection')) {
+      const roadId = t.closest('.register-inspection').dataset.id;
+      goToInspectionTab(roadId);
+    }
+  });
+
+  // ---------- Forms ----------
+  document.getElementById('inspectionForm').addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    await saveInspection();
+  });
+  document.getElementById('roadForm').addEventListener('submit', async (e)=>{ e.preventDefault(); await saveRoad(); });
+  document.getElementById('contractorForm').addEventListener('submit', async (e)=>{ e.preventDefault(); await saveContractor(); });
+  document.getElementById('inspectorForm').addEventListener('submit', async (e)=>{ e.preventDefault(); await saveInspector(); });
+  document.getElementById('sectionForm').addEventListener('submit', async (e)=>{ e.preventDefault(); await saveRoadSectionModal(); });
+
+  document.getElementById('addAnotherInspection').addEventListener('click', addAnotherInspection);
+  document.getElementById('roadSelect').addEventListener('change', updateContractorInfo);
+  document.getElementById('startKm').addEventListener('input', updateContractorInfo);
+  document.getElementById('excelUploadArea').addEventListener('click', ()=> document.getElementById('excelFileInput').click());
+  document.getElementById('excelFileInput').addEventListener('change', handleExcelUpload);
+  document.getElementById('geoExcelUploadArea').addEventListener('click', ()=> document.getElementById('geoExcelFileInput').click());
+  document.getElementById('geoExcelFileInput').addEventListener('change', handleGeoExcelUpload);
+  document.getElementById('saveGeo').addEventListener('click', saveGeoData);
+  document.getElementById('filterInspector').addEventListener('change', loadHistoryTable);
+  document.getElementById('filterRoad').addEventListener('change', loadHistoryTable);
+  document.getElementById('filterDate').addEventListener('change', loadHistoryTable);
+  document.getElementById('exportExcel').addEventListener('click', exportToExcel);
+  document.getElementById('exportPDF').addEventListener('click', exportToPDF);
+
+  // ---------- Confirm helper ----------
+  function showConfirm(message, cb) {
+    document.getElementById('confirmMessage').textContent = message;
+    const m = new bootstrap.Modal(document.getElementById('confirmModal'));
+    const btn = document.getElementById('confirmAction');
+    btn.onclick = ()=> { cb(); m.hide(); };
+    m.show();
+  }
+
+  // ---------- CRUD Implementations ----------
+  // Inspectors: add doc first, then upload photo to path containing doc id, update doc with photoUrl & photoPath
+  async function saveInspector() {
+    const name = document.getElementById('inspectorFullName').value.trim();
+    const registration = document.getElementById('inspectorRegistration').value.trim();
+    const file = document.getElementById('inspectorPhoto').files[0];
+    if (!name || !registration) return alert('Preencha nome e matrícula');
+    // duplicate check (by registration)
+    if (inspectors.some(i=> i.registration === registration)) return alert('Matrícula já cadastrada');
+    // create doc
+    const docRef = await addDoc(collection(db,"inspectors"), { name, registration, photoUrl: null, photoPath: null });
+    // upload file if provided
+    if (file) {
+      const path = `inspectors/${docRef.id}/${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      await setDoc(doc(db,"inspectors",docRef.id), { photoUrl: url, photoPath: path }, { merge: true });
+    }
+    document.getElementById('inspectorForm').reset();
+    alert('Fiscal cadastrado com sucesso!');
+  }
+
+  async function deleteInspector(id) {
+    // get inspector doc to know photoPath
+    const d = await getDoc(doc(db,"inspectors",id));
+    if (!d.exists()) { await deleteDoc(doc(db,"inspectors",id)); return; }
+    const data = d.data();
+    if (data?.photoPath) {
+      try { await deleteObject(ref(storage, data.photoPath)); } catch(e){ console.warn('Não foi possível deletar arquivo do Storage:', e); }
+    }
+    await deleteDoc(doc(db,"inspectors",id));
+  }
+
+  // Contractors
+  async function saveContractor() {
+    const name = document.getElementById('contractorName').value.trim();
+    if (!name) return alert('Informe o nome');
+    if (contractors.some(c=> c.name.toLowerCase() === name.toLowerCase())) return alert('Já existe');
+    await addDoc(collection(db,"contractors"), { name });
+    document.getElementById('contractorForm').reset();
+  }
+  async function deleteContractor(id) {
+    // remove contractor doc
+    await deleteDoc(doc(db,"contractors",id));
+    // remove references in road sections (iterate roads and their sections)
+    for (const r of roads) {
+      for (const s of r.sections || []) {
+        if (String(s.contractorId) === String(id) || s.contractorId === id) {
+          // delete section doc
+          await deleteDoc(doc(db, `roads/${r.id}/sections`, s.id));
+        }
+      }
+    }
+    await loadRoadsTable();
+  }
+
+  // Roads & sections
+  async function saveRoad() {
+    const type = document.getElementById('roadType').value;
+    const number = document.getElementById('roadNumber').value.trim();
+    const startKm = parseFloat(document.getElementById('roadStartKm').value);
+    const endKm = parseFloat(document.getElementById('roadEndKm').value);
+    const contractorId = document.getElementById('roadContractor').value || null;
+    const description = document.getElementById('roadDescription').value.trim();
+    if (!type || !number || isNaN(startKm) || isNaN(endKm)) return alert('Preencha os campos');
+    if (startKm >= endKm) return alert('KM inicial deve ser menor que final');
+    const newRef = await addDoc(collection(db,"roads"), { type, number, startKm, endKm, defaultContractorId: contractorId || null, description: description||'' });
+    if (contractorId) await addDoc(collection(db, `roads/${newRef.id}/sections`), { startKm, endKm, contractorId });
+    document.getElementById('roadForm').reset();
+  }
+
+  async function saveRoadSectionModal() {
+    const roadId = document.getElementById('modalRoadId').value;
+    const startKm = parseFloat(document.getElementById('sectionStartKm').value);
+    const endKm = parseFloat(document.getElementById('sectionEndKm').value);
+    const contractorId = document.getElementById('sectionContractor').value;
+    if (!roadId || isNaN(startKm) || isNaN(endKm) || !contractorId) return alert('Preencha os campos do trecho');
+    const road = roads.find(r=> r.id==roadId);
+    if (!road) return alert('Rodovia inválida');
+    if (startKm < road.startKm || endKm > road.endKm) return alert(`Trecho deve estar entre ${road.startKm} e ${road.endKm} KM`);
+    // overlap check
+    for (const s of road.sections || []) {
+      if ((startKm >= s.startKm && startKm <= s.endKm) || (endKm >= s.startKm && endKm <= s.endKm) || (startKm <= s.startKm && endKm >= s.endKm)) return alert('Trecho sobrepõe trecho existente');
+    }
+    await addDoc(collection(db, `roads/${roadId}/sections`), { startKm, endKm, contractorId });
+    // refresh modal table
+    openSectionsVisualModal(roadId);
+  }
+
+  // Inspections
+  async function saveInspection() {
+    // if multiple inspections in the 'additional' list exist, save them all
+    const list = document.querySelectorAll('#multipleInspectionsList .inspection-item');
+    if (list.length) {
+      const ops = [];
+      list.forEach(item => {
+        const inspectorId = item.querySelector('input[name="inspectorId"]').value;
+        const date = item.querySelector('input[name="date"]').value;
+        const roadId = item.querySelector('input[name="roadId"]').value;
+        const startKm = parseFloat(item.querySelector('input[name="startKm"]').value);
+        const endKm = parseFloat(item.querySelector('input[name="endKm"]').value);
+        const obs = item.querySelector('input[name="observations"]').value;
+        ops.push(addDoc(collection(db,"inspections"), { inspectorId, date, roadId, startKm, endKm, observations: obs||'', geoStartLat:null, geoStartLng:null, geoEndLat:null, geoEndLng:null }));
+      });
+      await Promise.all(ops);
+      // clear UI
+      document.getElementById('multipleInspectionsList').innerHTML = '';
+      document.getElementById('multipleInspectionsContainer').classList.add('d-none');
+      alert('Vistorias adicionadas com sucesso!');
+    }
+    // also save the main form (if filled)
+    const inspectorId = document.getElementById('inspectorName').value;
+    const date = document.getElementById('inspectionDate').value;
+    const roadId = document.getElementById('roadSelect').value;
+    const startKm = parseFloat(document.getElementById('startKm').value);
+    const endKm = parseFloat(document.getElementById('endKm').value);
+    const observations = document.getElementById('observations').value.trim();
+    if (inspectorId && date && roadId && !isNaN(startKm) && !isNaN(endKm)) {
+      if (startKm >= endKm) return alert('KM inicial deve ser menor que final');
+      await addDoc(collection(db,"inspections"), { inspectorId, date, roadId, startKm, endKm, observations, geoStartLat:null, geoStartLng:null, geoEndLat:null, geoEndLng:null });
+      document.getElementById('inspectionForm').reset();
+      alert('Vistoria registrada com sucesso!');
+    }
+  }
+
+  // Delete inspection handled by generic delete earlier (deleteDoc)
+
+  // Geo
+  function openGeoModal(inspectionId) {
+    document.getElementById('geoInspectionId').value = inspectionId;
+    const ins = inspections.find(x=> x.id==inspectionId);
+    document.getElementById('startLat').value = ins?.geoStartLat || '';
+    document.getElementById('startLng').value = ins?.geoStartLng || '';
+    document.getElementById('endLat').value = ins?.geoEndLat || '';
+    document.getElementById('endLng').value = ins?.geoEndLng || '';
+    new bootstrap.Modal(document.getElementById('geoModal')).show();
+  }
+
+  async function saveGeoData() {
+    const id = document.getElementById('geoInspectionId').value;
+    if (!id) return alert('ID inválido');
+    const startLat = document.getElementById('startLat').value || null;
+    const startLng = document.getElementById('startLng').value || null;
+    const endLat = document.getElementById('endLat').value || null;
+    const endLng = document.getElementById('endLng').value || null;
+    await setDoc(doc(db,"inspections",id), { geoStartLat: startLat, geoStartLng: startLng, geoEndLat: endLat, geoEndLng: endLng }, { merge: true });
+    alert('Coordenadas salvas!');
+    bootstrap.Modal.getInstance(document.getElementById('geoModal'))?.hide();
+  }
+
+  // Sections visual modal
+  async function openSectionsVisualModal(roadId) {
+    const road = roads.find(r=> r.id==roadId);
+    if (!road) return alert('Rodovia não encontrada');
+    document.getElementById('modalRoadId').value = roadId;
+    document.getElementById('sectionsRoadLabel').textContent = `${road.type}-${road.number} (${road.startKm} a ${road.endKm} KM)`;
+    // fill table
+    const tbody = document.querySelector('#roadSectionsModalTable tbody'); tbody.innerHTML = '';
+    (road.sections||[]).forEach(s=>{
+      const contractor = contractors.find(c=> c.id==s.contractorId) || {};
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${s.startKm}</td><td>${s.endKm}</td><td>${contractor.name||s.contractorId}</td><td><button class="btn btn-sm btn-outline-danger delete-section" data-road-id="${roadId}" data-id="${s.id}">Excluir</button></td>`;
+      tbody.appendChild(tr);
+    });
+    populateSectionsContractors();
+    new bootstrap.Modal(document.getElementById('sectionsModal')).show();
+
+    // attach delete handlers (delegated)
+    tbody.querySelectorAll('.delete-section').forEach(btn=>{
+      btn.onclick = async ()=> {
+        const rid = btn.dataset.roadId; const sid = btn.dataset.id;
+        showConfirm('Excluir trecho?', async ()=> {
+          await deleteDoc(doc(db, `roads/${rid}/sections`, sid));
+        });
+      };
+    });
+  }
+
+  // Road section save is handled by saveRoadSectionModal()
+
+  // ---------- Helpers used by excel imports etc ----------
+  function findInspectorIdByName(name) {
+    if (!name) return '';
+    const found = inspectors.find(i=> (i.name && i.name.toLowerCase() === String(name).toLowerCase()));
+    return found ? found.id : '';
+  }
+  function findRoadIdByLabel(label) {
+    if (!label) return '';
+    const found = roads.find(r => `${r.type}-${r.number}` === String(label));
+    return found ? found.id : '';
+  }
+
+  // Excel import (vistorias)
+  function handleExcelUpload(e) {
+    const f = e.target.files[0]; if (!f) return;
+    const reader = new FileReader();
+    reader.onload = (evt)=> {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data,{type:'array'});
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet);
+      json.forEach(row => {
+        const date = row['Data'] || row['data'] || row['Date'];
+        const fiscal = row['Fiscal'] || row['fiscal'];
+        const rod = row['Rodovia'] || row['rodovia'];
+        const start = row['KM Inicial'] || row['KM inicial'] || row['KM_inicial'] || 0;
+        const end = row['KM Final'] || row['KM final'] || 0;
+        addDoc(collection(db,"inspections"), { inspectorId: findInspectorIdByName(fiscal)||'', date, roadId: findRoadIdByLabel(rod)||'', startKm: start, endKm: end, observations: row['Observações']||'' });
+      });
+      setTimeout(()=> alert('Importação concluída — verifique histórico.'),800);
+    };
+    reader.readAsArrayBuffer(f);
+  }
+
+  // Geo excel import
+  function handleGeoExcelUpload(e) {
+    const f = e.target.files[0]; if(!f) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data,{type:'array'});
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet);
+      json.forEach(async row => {
+        const roadLabel = row['Rodovia'] || row['rodovia'];
+        const km = row['KM'] || row['Km'] || row['km'];
+        const lat = row['Latitude'] || row['latitude'];
+        const lng = row['Longitude'] || row['longitude'];
+        const roadId = findRoadIdByLabel(roadLabel);
+        if (!roadId) return;
+        // find inspection that contains km
+        const ins = inspections.find(i=> i.roadId==roadId && i.startKm <= km && i.endKm >= km);
+        if (ins) {
+          await setDoc(doc(db,"inspections",ins.id), { geoStartLat: lat, geoStartLng: lng }, { merge: true });
+        }
+      });
+      setTimeout(()=> alert('Importação de georreferenciamento concluída.'),800);
+    };
+    reader.readAsArrayBuffer(f);
+  }
+
+  // ---------- Export ----------
+  function exportToExcel() {
+    const data = inspections.map(i=>{
+      const inspector = inspectors.find(x=> x.id==i.inspectorId) || {};
+      const road = roads.find(r=> r.id==i.roadId) || {};
+      return { Data: i.date, Fiscal: inspector.name||'', Rodovia: road.type?road.type+'-'+road.number:'', 'KM Inicial': i.startKm, 'KM Final': i.endKm, Observações: i.observations||'' };
+    });
+    const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Vistorias'); XLSX.writeFile(wb,'vistorias.xlsx');
+  }
+
+  function exportToPDF() {
+    const { jsPDF } = window.jspdf;
+    const docp = new jsPDF();
+    const rows = inspections.map(i=>{
+      const inspector = inspectors.find(x=> x.id==i.inspectorId) || {};
+      const road = roads.find(r=> r.id==i.roadId) || {};
+      return [formatDate(i.date), inspector.name||'', road.type?road.type+'-'+road.number:'', `${i.startKm} a ${i.endKm}`, i.observations||''];
+    });
+    docp.autoTable({ head:[['Data','Fiscal','Rodovia','Trecho','Observações']], body: rows });
+    docp.save('vistorias.pdf');
+  }
+
+  // ---------- Small UI helpers ----------
+  function addAnotherInspection() {
+    const inspectorId = document.getElementById('inspectorName').value;
+    const date = document.getElementById('inspectionDate').value;
+    const roadId = document.getElementById('roadSelect').value;
+    const startKm = document.getElementById('startKm').value;
+    const endKm = document.getElementById('endKm').value;
+    const observations = document.getElementById('observations').value;
+    if (!inspectorId || !date || !roadId || !startKm || !endKm) return alert('Preencha os campos antes de adicionar');
+    const list = document.getElementById('multipleInspectionsList');
+    const div = document.createElement('div'); div.className='inspection-item border p-2 mb-2';
+    div.innerHTML = `<button class="btn btn-sm btn-danger remove-inspection float-end">Remover</button><strong>${roads.find(r=>r.id==roadId)?.type||''}-${roads.find(r=>r.id==roadId)?.number||''}</strong> (${startKm} a ${endKm})<br><small class="text-muted">Data: ${formatDate(date)}</small><input type="hidden" name="inspectorId" value="${inspectorId}"><input type="hidden" name="date" value="${date}"><input type="hidden" name="roadId" value="${roadId}"><input type="hidden" name="startKm" value="${startKm}"><input type="hidden" name="endKm" value="${endKm}"><input type="hidden" name="observations" value="${observations}">`;
+    list.appendChild(div);
+    document.getElementById('multipleInspectionsContainer').classList.remove('d-none');
+    div.querySelector('.remove-inspection').addEventListener('click', ()=> { div.remove(); if (!list.children.length) document.getElementById('multipleInspectionsContainer').classList.add('d-none'); });
+    document.getElementById('roadSelect').value=''; document.getElementById('startKm').value=''; document.getElementById('endKm').value=''; document.getElementById('observations').value='';
+  }
+
+  function updateContractorInfo() {
+    const roadId = document.getElementById('roadSelect').value;
+    const startKm = parseFloat(document.getElementById('startKm').value);
+    const div = document.getElementById('contractorInfo');
+    if (!roadId || isNaN(startKm)) { div.innerHTML = 'Selecione rodovia + KM'; return; }
+    const contractor = findContractorForRoadSection(roadId, startKm);
+    div.innerHTML = contractor ? `<span class="badge-contractor">${contractor.name}</span>` : '<span class="text-muted">Nenhuma empreiteira definida</span>';
+  }
+
+  function showInspectionDetails(id) {
+    const ins = inspections.find(x=> x.id==id);
+    if (!ins) return alert('Vistoria não encontrada');
+    const inspector = inspectors.find(i=> i.id==ins.inspectorId) || {};
+    const road = roads.find(r=> r.id==ins.roadId) || {};
+    const contractor = findContractorForRoadSection(ins.roadId, ins.startKm);
+    let txt = `Data: ${formatDate(ins.date)}\nFiscal: ${inspector.name||''}\nRodovia: ${road.type?road.type+'-'+road.number:''}\nTrecho: ${ins.startKm} a ${ins.endKm}\nEmpreiteira: ${contractor?contractor.name:'Não definida'}\nObservações: ${ins.observations||''}`;
+    alert(txt);
+  }
+
+  function goToInspectionTab(roadId) {
+    new bootstrap.Tab(document.querySelector('button[data-bs-target="#register"]')).show();
+    document.getElementById('roadSelect').value = roadId;
+  }
+
+  // expose helper to window for debugging
+  window.appHelpers = { formatDate, refresh: ()=>{ /* manual refresh via listeners already active */ } };
+
+  </script>
+</body>
+</html>
