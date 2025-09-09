@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -563,18 +564,43 @@
 
   // Roads & sections
   async function saveRoad() {
-    const type = document.getElementById('roadType').value;
-    const number = document.getElementById('roadNumber').value.trim();
-    const startKm = parseFloat(document.getElementById('roadStartKm').value);
-    const endKm = parseFloat(document.getElementById('roadEndKm').value);
-    const contractorId = document.getElementById('roadContractor').value || null;
-    const description = document.getElementById('roadDescription').value.trim();
-    if (!type || !number || isNaN(startKm) || isNaN(endKm)) return alert('Preencha os campos');
-    if (startKm >= endKm) return alert('KM inicial deve ser menor que final');
-    const newRef = await addDoc(collection(db,"roads"), { type, number, startKm, endKm, defaultContractorId: contractorId || null, description: description||'' });
-    if (contractorId) await addDoc(collection(db, `roads/${newRef.id}/sections`), { startKm, endKm, contractorId });
-    document.getElementById('roadForm').reset();
+  const type = document.getElementById('roadType').value;
+  const number = document.getElementById('roadNumber').value.trim();
+  const startKm = parseFloat(document.getElementById('roadStartKm').value);
+  const endKm = parseFloat(document.getElementById('roadEndKm').value);
+  const contractorId = document.getElementById('roadContractor').value;
+  const description = document.getElementById('roadDescription').value.trim();
+
+  if (!type || !number || isNaN(startKm) || isNaN(endKm)) {
+    return alert('Preencha todos os campos obrigatórios');
   }
+  if (startKm >= endKm) {
+    return alert('KM inicial deve ser menor que o KM final');
+  }
+
+  // Cria a rodovia
+  const newRef = await addDoc(collection(db, "roads"), {
+    type,
+    number,
+    startKm,
+    endKm,
+    defaultContractorId: contractorId || null,
+    description: description || ''
+  });
+
+  // Se tiver empreiteira padrão, já cria um trecho
+  if (contractorId && contractorId !== "") {
+    await addDoc(collection(db, `roads/${newRef.id}/sections`), {
+      startKm,
+      endKm,
+      contractorId
+    });
+  }
+
+  document.getElementById('roadForm').reset();
+  alert('Rodovia cadastrada com sucesso!');
+}
+
 
   async function saveRoadSectionModal() {
     const roadId = document.getElementById('modalRoadId').value;
