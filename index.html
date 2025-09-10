@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -349,7 +348,9 @@
       const secs = road.sections||[];
       if (!secs.length) {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${road.type}-${road.number}</td><td>${road.startKm} a ${road.endKm}</td><td>${(road.endKm-road.startKm).toFixed(3)} km</td><td><small class="text-muted">Nenhuma</small></td><td><button class="btn btn-sm btn-outline-primary manage-sections" data-id="${road.id}">Gerenciar</button></td>`;
+        // Mostrar empreiteira padrão se não houver trechos específicos
+        const defaultContractor = contractors.find(c => c.id === road.defaultContractorId);
+        tr.innerHTML = `<td>${road.type}-${road.number}</td><td>${road.startKm} a ${road.endKm}</td><td>${(road.endKm-road.startKm).toFixed(3)} km</td><td>${defaultContractor ? defaultContractor.name : '<small class="text-muted">Nenhuma</small>'}</td><td><button class="btn btn-sm btn-outline-primary manage-sections" data-id="${road.id}">Gerenciar</button></td>`;
         tbody.appendChild(tr);
       } else {
         secs.forEach((s,idx)=>{
@@ -370,7 +371,11 @@
     const tbody = document.querySelector('#contractorsTable tbody'); if(!tbody) return;
     tbody.innerHTML = '';
     contractors.forEach(c=>{
-      let count=0; roads.forEach(r=> { if (r.sections) count+= r.sections.filter(s=> s.contractorId==c.id).length; });
+      let count=0; roads.forEach(r=> { 
+        if (r.sections) count += r.sections.filter(s=> s.contractorId==c.id).length;
+        // Contar também como empreiteira padrão da rodovia
+        if (r.defaultContractorId === c.id) count++;
+      });
       const tr = document.createElement('tr');
       tr.innerHTML = `<td>${c.name}</td><td>${count} trecho(s)</td><td><button class="btn btn-sm btn-outline-danger delete-contractor" data-id="${c.id}">Excluir</button></td>`;
       tbody.appendChild(tr);
@@ -439,10 +444,22 @@
   function formatDate(d){ try{ return new Date(d).toLocaleDateString('pt-BR'); }catch(e){return d;} }
   function findContractorForRoadSection(roadId, km) {
     const road = roads.find(r=> r.id==roadId);
-    if (!road || !road.sections) return null;
-    const sec = road.sections.find(s => km >= s.startKm && km <= s.endKm);
-    if (!sec) return null;
-    return contractors.find(c => c.id==sec.contractorId) || contractors.find(c=> c.id===sec.contractorId);
+    if (!road) return null;
+    
+    // Primeiro verifica se há trechos específicos
+    if (road.sections && road.sections.length) {
+      const section = road.sections.find(s => parseFloat(km) >= parseFloat(s.startKm) && parseFloat(km) <= parseFloat(s.endKm));
+      if (section) {
+        return contractors.find(c => c.id === section.contractorId);
+      }
+    }
+    
+    // Se não encontrou trecho específico, retorna a empreiteira padrão da rodovia
+    if (road.defaultContractorId) {
+      return contractors.find(c => c.id === road.defaultContractorId);
+    }
+    
+    return null;
   }
 
   // ---------- Event wiring ----------
@@ -558,49 +575,27 @@
           await deleteDoc(doc(db, `roads/${r.id}/sections`, s.id));
         }
       }
+      // remove as default contractor from roads
+      if (r.defaultContractorId === id) {
+        await setDoc(doc(db, "roads", r.id), { defaultContractorId: null }, { merge: true });
+      }
     }
     await loadRoadsTable();
   }
 
   // Roads & sections
   async function saveRoad() {
-  const type = document.getElementById('roadType').value;
-  const number = document.getElementById('roadNumber').value.trim();
-  const startKm = parseFloat(document.getElementById('roadStartKm').value);
-  const endKm = parseFloat(document.getElementById('roadEndKm').value);
-  const contractorId = document.getElementById('roadContractor').value;
-  const description = document.getElementById('roadDescription').value.trim();
-
-  if (!type || !number || isNaN(startKm) || isNaN(endKm)) {
-    return alert('Preencha todos os campos obrigatórios');
+    const type = document.getElementById('roadType').value;
+    const number = document.getElementById('roadNumber').value.trim();
+    const startKm = parseFloat(document.getElementById('roadStartKm').value);
+    const endKm = parseFloat(document.getElementById('roadEndKm').value);
+    const contractorId = document.getElementById('roadContractor').value || null;
+    const description = document.getElementById('roadDescription').value.trim();
+    if (!type || !number || isNaN(startKm) || isNaN(endKm)) return alert('Preencha os campos');
+    if (startKm >= endKm) return alert('KM inicial deve ser menor que final');
+    await addDoc(collection(db,"roads"), { type, number, startKm, endKm, defaultContractorId: contractorId || null, description: description||'' });
+    document.getElementById('roadForm').reset();
   }
-  if (startKm >= endKm) {
-    return alert('KM inicial deve ser menor que o KM final');
-  }
-
-  // Cria a rodovia
-  const newRef = await addDoc(collection(db, "roads"), {
-    type,
-    number,
-    startKm,
-    endKm,
-    defaultContractorId: contractorId || null,
-    description: description || ''
-  });
-
-  // Se tiver empreiteira padrão, já cria um trecho
-  if (contractorId && contractorId !== "") {
-    await addDoc(collection(db, `roads/${newRef.id}/sections`), {
-      startKm,
-      endKm,
-      contractorId
-    });
-  }
-
-  document.getElementById('roadForm').reset();
-  alert('Rodovia cadastrada com sucesso!');
-}
-
 
   async function saveRoadSectionModal() {
     const roadId = document.getElementById('modalRoadId').value;
